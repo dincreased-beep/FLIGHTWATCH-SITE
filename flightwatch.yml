@@ -1,0 +1,137 @@
+name: FlightWatch
+
+# ---------------------------------------------------------------------------
+# Les horaires sont en UTC. La France est à UTC+2 l'été et UTC+1 l'hiver :
+# 05:05 UTC = 07:05 heure d'été / 06:05 heure d'hiver.
+# Les exécutions planifiées subissent un délai de charge de 10 à 20 minutes,
+# c'est normal et sans importance ici.
+# ---------------------------------------------------------------------------
+
+on:
+  schedule:
+    - cron: "5 5 * * *"      # matin
+    - cron: "5 17 * * *"     # soir
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Que lancer"
+        type: choice
+        default: run
+        options:
+          - run             # cycle complet + e-mail
+          - dry-run         # cycle complet, affiché dans les logs, sans e-mail
+          - backfill        # collecte seule (phase d'amorçage)
+          - stats           # état de la base et quota SerpApi
+          - test-email      # vérifier la configuration SMTP
+
+# Un seul cycle à la fois : deux exécutions simultanées se marcheraient
+# dessus au moment de réécrire la base.
+concurrency:
+  group: flightwatch
+  cancel-in-progress: false
+
+# Nécessaire pour que le job puisse réécrire flightwatch.db dans le dépôt.
+permissions:
+  contents: write
+
+env:
+  # Dépôt PUBLIC qui héberge le site chiffré, au format "pseudo/nom-du-depot".
+  # Laisser vide pour désactiver complètement la publication.
+  PAGES_REPO: "dincreased-beep/flightwatch-site"
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Lancer l'agent
+        env:
+          TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MODE: ${{ github.event.inputs.mode || 'run' }}
+        run: |
+          set -o pipefail
+          case "$MODE" in
+            dry-run) python main.py -v run --dry-run ;;
+            run)     python main.py -v run ;;
+            *)       python main.py -v "$MODE" ;;
+          esac
+
+      # ----------------------------------------------------------------
+      # Publication du site privé. Chaque page est chiffrée en AES par
+      # StatiCrypt AVANT d'être poussée : le dépôt public ne contient que du
+      # texte illisible sans le mot de passe. C'est ce qui permet d'utiliser
+      # GitHub Pages, indisponible sur un dépôt privé en formule gratuite.
+      # ----------------------------------------------------------------
+      - name: Générer le site
+        if: env.PAGES_REPO != ''
+        run: python main.py -v site --out site
+
+      - name: Chiffrer les pages
+        if: env.PAGES_REPO != ''
+        env:
+          PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: |
+          if [ -z "$PASSWORD" ]; then
+            echo "SITE_PASSWORD absent : publication annulée." >&2
+            exit 1
+          fi
+          npm install -g staticrypt
+          find site -name '*.html' | while read -r f; do
+            rel="${f#site/}"
+            mkdir -p "chiffre/$(dirname "$rel")"
+            staticrypt "$f" -d "chiffre/$(dirname "$rel")" -p "$PASSWORD"
+          done
+          # Les fichiers non-HTML (app.js) ne sont pas chiffrés : ils ne
+          # contiennent aucun prix, seulement la logique de recherche. Ils
+          # doivent être copiés tels quels, sinon la page déchiffrée n'a plus
+          # de script à charger.
+          find site -type f ! -name '*.html' | while read -r f; do
+            rel="${f#site/}"
+            mkdir -p "chiffre/$(dirname "$rel")"
+            cp "$f" "chiffre/$rel"
+          done
+          # Empêche toute indexation, même si l'adresse fuite.
+          printf 'User-agent: *\nDisallow: /\n' > chiffre/robots.txt
+          echo "Pages chiffrées : $(find chiffre -name '*.html' | wc -l)"
+
+      - name: Publier
+        if: env.PAGES_REPO != ''
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.PAGES_TOKEN }}
+          external_repository: ${{ env.PAGES_REPO }}
+          publish_branch: gh-pages
+          publish_dir: ./chiffre
+          commit_message: "site du ${{ github.run_number }}"
+
+      - name: Sauvegarder l'historique des prix
+        # `always()` : même si l'agent a échoué, les prix déjà collectés
+        # et les appels API consommés doivent être conservés.
+        if: always()
+        run: |
+          if [ -z "$(git status --porcelain flightwatch.db)" ]; then
+            echo "Base inchangée, rien à sauvegarder."
+            exit 0
+          fi
+          git config user.name  "flightwatch-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flightwatch.db
+          git commit -m "historique des prix — $(date -u '+%Y-%m-%d %H:%M') UTC"
+          git pull --rebase --autostash
+          git push
