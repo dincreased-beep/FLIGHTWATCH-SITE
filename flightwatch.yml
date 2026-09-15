@@ -34,11 +34,6 @@ concurrency:
 permissions:
   contents: write
 
-env:
-  # Dépôt PUBLIC qui héberge le site chiffré, au format "pseudo/nom-du-depot".
-  # Laisser vide pour désactiver complètement la publication.
-  PAGES_REPO: "dincreased-beep/flightwatch-site"
-
 jobs:
   watch:
     runs-on: ubuntu-latest
@@ -79,11 +74,9 @@ jobs:
       # GitHub Pages, indisponible sur un dépôt privé en formule gratuite.
       # ----------------------------------------------------------------
       - name: Générer le site
-        if: env.PAGES_REPO != ''
         run: python main.py -v site --out site
 
       - name: Chiffrer les pages
-        if: env.PAGES_REPO != ''
         env:
           PASSWORD: ${{ secrets.SITE_PASSWORD }}
         run: |
@@ -111,11 +104,12 @@ jobs:
           echo "Pages chiffrées : $(find chiffre -name '*.html' | wc -l)"
 
       - name: Publier
-        if: env.PAGES_REPO != ''
         uses: peaceiris/actions-gh-pages@v4
         with:
           personal_token: ${{ secrets.PAGES_TOKEN }}
-          external_repository: ${{ env.PAGES_REPO }}
+          # >>> REMPLACE CETTE LIGNE par ton dépôt public, au format
+          # >>> pseudo/nom-du-depot — sans https://, sans github.com/
+          external_repository: dincreased/flightwatch-site
           publish_branch: gh-pages
           publish_dir: ./chiffre
           commit_message: "site du ${{ github.run_number }}"
