@@ -20,6 +20,20 @@
         .normalize('NFD').replace(/[̀-ͯ]/g, '');
     }
 
+    // La carte doit refléter exactement ce que montre le tableau : sinon on
+    // clique sur un pays qui n'a plus aucune offre dans l'intervalle choisi.
+    function majCarte(villesOk, paysOk, filtrage) {
+      document.querySelectorAll('.ville[data-dest]').forEach(function (g) {
+        var ok = !filtrage || villesOk[g.getAttribute('data-dest')];
+        g.classList.toggle('muet', !ok);
+      });
+      document.querySelectorAll('.pays.actif[data-cc]').forEach(function (p) {
+        var ok = !filtrage || paysOk[p.getAttribute('data-cc')];
+        p.classList.toggle('muet', !ok);
+        if (!ok) p.classList.remove('selection');
+      });
+    }
+
     function bornesDuree() {
       var v = duree ? duree.value : '';
       if (!v) return null;
@@ -33,6 +47,7 @@
       var au = d2 && d2.value ? d2.value : '';
       var bd = bornesDuree();
       var n = 0;
+      var villesOk = {}, paysOk = {};
 
       rows.forEach(function (tr) {
         var okTexte = !terme ||
@@ -56,8 +71,16 @@
 
         var visible = okTexte && okClasse && okDates && okDuree;
         tr.style.display = visible ? '' : 'none';
-        if (visible) n++;
+        if (visible) {
+          n++;
+          var dst = tr.getAttribute('data-dest');
+          var cc = tr.getAttribute('data-cc');
+          if (dst) villesOk[dst] = 1;
+          if (cc) paysOk[cc] = 1;
+        }
       });
+
+      majCarte(villesOk, paysOk, !!(du || au || bd || terme || classe !== 'all'));
 
       if (count) {
         count.textContent = n + (n > 1 ? ' destinations' : ' destination');
@@ -291,6 +314,7 @@
     }
     document.querySelectorAll('.pays.actif[data-pays]').forEach(function (el) {
       el.addEventListener('click', function () {
+        if (el.classList.contains('muet')) return;
         var nom = el.getAttribute('data-pays');
         choisir(el.classList.contains('selection') ? '' : nom);
       });
