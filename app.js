@@ -7,32 +7,99 @@
     if (!rows.length) return;
     var count = document.getElementById('count');
     var empty = document.getElementById('empty');
-    var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+    var chips = Array.prototype.slice.call(
+      document.querySelectorAll('.chip[data-filter]'));
     var classe = 'all';
+    var d1 = document.getElementById('d1');
+    var d2 = document.getElementById('d2');
+    var duree = document.getElementById('duree');
+    var retour = document.getElementById('retour');
 
     function norm(s) {
       return (s || '').toLowerCase()
         .normalize('NFD').replace(/[̀-ͯ]/g, '');
     }
 
+    function bornesDuree() {
+      var v = duree ? duree.value : '';
+      if (!v) return null;
+      var p = v.split('-');
+      return {min: parseInt(p[0], 10), max: parseInt(p[1], 10)};
+    }
+
     function apply() {
       var terme = norm(q ? q.value : '');
+      var du = d1 && d1.value ? d1.value : '';
+      var au = d2 && d2.value ? d2.value : '';
+      var bd = bornesDuree();
       var n = 0;
+
       rows.forEach(function (tr) {
-        var okTexte = !terme || norm(tr.getAttribute('data-search')).indexOf(terme) > -1;
-        var okClasse = classe === 'all' || tr.getAttribute('data-class') === classe;
-        var visible = okTexte && okClasse;
+        var okTexte = !terme ||
+          norm(tr.getAttribute('data-search')).indexOf(terme) > -1;
+        var okClasse = classe === 'all' ||
+          tr.getAttribute('data-class') === classe;
+
+        // Les dates sont en ISO : la comparaison de chaînes suffit et évite
+        // les pièges de fuseau d'un Date().
+        var dep = tr.getAttribute('data-depart') || '';
+        var okDates = true;
+        if (du || au) {
+          okDates = dep !== '' && (!du || dep >= du) && (!au || dep <= au);
+        }
+
+        var okDuree = true;
+        if (bd) {
+          var nuits = parseInt(tr.getAttribute('data-nuits') || '0', 10);
+          okDuree = nuits >= bd.min && nuits <= bd.max;
+        }
+
+        var visible = okTexte && okClasse && okDates && okDuree;
         tr.style.display = visible ? '' : 'none';
         if (visible) n++;
       });
-      if (count) count.textContent = n + (n > 1 ? ' destinations' : ' destination');
+
+      if (count) {
+        count.textContent = n + (n > 1 ? ' destinations' : ' destination');
+      }
       if (empty) empty.style.display = n ? 'none' : 'block';
+
+      // La flèche n'apparaît que s'il y a quelque chose à annuler.
+      var actif = !!(terme || du || au || (bd) || classe !== 'all');
+      if (retour) retour.style.display = actif ? 'inline-block' : 'none';
     }
 
     if (q) {
       q.addEventListener('input', apply);
       q.addEventListener('search', apply);
     }
+    [d1, d2, duree].forEach(function (el) {
+      if (el) el.addEventListener('change', apply);
+    });
+
+    function toutEffacer() {
+      if (q) q.value = '';
+      if (d1) d1.value = '';
+      if (d2) d2.value = '';
+      if (duree) duree.value = '';
+      classe = 'all';
+      chips.forEach(function (c) {
+        c.classList.toggle('on', c.getAttribute('data-filter') === 'all');
+      });
+      document.querySelectorAll('.pays.selection').forEach(function (el) {
+        el.classList.remove('selection');
+      });
+      var r = document.getElementById('reset');
+      if (r) r.style.display = 'none';
+      apply();
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+
+    var vider = document.getElementById('vider');
+    if (vider) vider.addEventListener('click', toutEffacer);
+    if (retour) retour.addEventListener('click', function (e) {
+      e.preventDefault(); toutEffacer();
+    });
 
     // ----- Carte : zoom, panoramique, encadré de survol -----------------
     var svg = document.getElementById('carte');
