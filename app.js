@@ -33,6 +33,29 @@
       q.addEventListener('input', apply);
       q.addEventListener('search', apply);
     }
+
+    // Carte : un clic sur un pays ou une ville filtre le tableau.
+    var reset = document.getElementById('reset');
+    function choisir(nom) {
+      if (q) { q.value = nom; }
+      document.querySelectorAll('.pays.actif').forEach(function (el) {
+        el.classList.toggle('selection', el.getAttribute('data-pays') === nom);
+      });
+      if (reset) { reset.style.display = nom ? '' : 'none'; }
+      apply();
+      var t = document.querySelector('.search');
+      if (t && nom) { t.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+    }
+    document.querySelectorAll('[data-pays]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var nom = el.getAttribute('data-pays');
+        choisir(el.classList.contains('selection') ? '' : nom);
+      });
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+      });
+    });
+    if (reset) { reset.addEventListener('click', function () { choisir(''); }); }
     chips.forEach(function (c) {
       c.addEventListener('click', function () {
         chips.forEach(function (x) { x.classList.remove('on'); });
