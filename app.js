@@ -354,3 +354,42 @@
     document.addEventListener('DOMContentLoaded', init);
   } else { init(); }
 })();
+
+// Survol du graphique de prix : un curseur et une bulle, rien de plus.
+(function () {
+  function init() {
+    document.querySelectorAll('.graphique').forEach(function (g) {
+      var svg = g.querySelector('svg');
+      var cur = svg.querySelector('.gcur');
+      var cl = svg.querySelector('.gcl');
+      var cp = svg.querySelector('.gcp');
+      var bulle = g.querySelector('.gbulle');
+      if (!cur || !bulle) return;
+      var vb = svg.viewBox.baseVal;
+      function montrer(z) {
+        var x = z.getAttribute('data-x'), y = z.getAttribute('data-y');
+        cl.setAttribute('x1', x); cl.setAttribute('x2', x);
+        cp.setAttribute('cx', x); cp.setAttribute('cy', y);
+        cur.style.display = '';
+        bulle.querySelector('b').textContent = z.getAttribute('data-p');
+        bulle.querySelector('span').textContent = z.getAttribute('data-j');
+        var r = svg.getBoundingClientRect();
+        bulle.style.left = (x / vb.width * r.width) + 'px';
+        bulle.style.top = (y / vb.height * r.height) + 'px';
+        bulle.style.display = '';
+      }
+      svg.querySelectorAll('.gz').forEach(function (z) {
+        z.addEventListener('mouseenter', function () { montrer(z); });
+        z.addEventListener('touchstart', function (e) {
+          montrer(z); e.preventDefault();
+        }, { passive: false });
+      });
+      svg.addEventListener('mouseleave', function () {
+        cur.style.display = 'none'; bulle.style.display = 'none';
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+})();
